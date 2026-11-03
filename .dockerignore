@@ -1,0 +1,13 @@
+target/
+.git/
+.github/
+.idea/
+.vscode/
+*.iml
+k8s/
+ansible/
+docs/
+scripts/
+README.md
+Dockerfile
+.dockerignore

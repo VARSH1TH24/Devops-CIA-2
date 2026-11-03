@@ -1,0 +1,44 @@
+---
+# Deploys the application to the EKS cluster configured in the current kubeconfig.
+# Usage: ansible-playbook -i ansible/inventory.ini ansible/deploy.yml -e image=<ecr-uri>:<tag>
+- name: Deploy cicd-java-app to Kubernetes
+  hosts: local
+  gather_facts: false
+  vars:
+    namespace: cicd-demo
+  tasks:
+    - name: Ensure the image variable is supplied
+      ansible.builtin.assert:
+        that: image is defined
+        fail_msg: "Pass the image with -e image=<registry>/<repo>:<tag>"
+
+    - name: Create namespace
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ playbook_dir }}/../k8s/namespace.yaml"
+
+    - name: Apply Deployment (rendered with the new image tag)
+      kubernetes.core.k8s:
+        state: present
+        template: "{{ playbook_dir }}/../k8s/deployment.yaml.j2"
+        wait: true
+        wait_condition:
+          type: Available
+          status: "True"
+        wait_timeout: 300
+
+    - name: Apply Service
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ playbook_dir }}/../k8s/service.yaml"
+
+    - name: Read Deployment status
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: cicd-java-app
+        namespace: "{{ namespace }}"
+      register: dep
+
+    - name: Show ready replicas
+      ansible.builtin.debug:
+        msg: "{{ dep.resources[0].status.readyReplicas | default(0) }} / {{ dep.resources[0].spec.replicas }} replicas ready, image {{ image }}"

@@ -1,0 +1,107 @@
+name: CI/CD - Build, Test, Dockerize, Deploy to EKS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: cicd-java-app
+  EKS_CLUSTER: ${{ secrets.EKS_CLUSTER_NAME }}
+
+jobs:
+  build-and-test:
+    name: Build and Test (Maven)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout source code
+        uses: actions/checkout@v4
+
+      - name: 2. Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: 3. Compile, run unit tests and package
+        run: mvn -B clean verify
+
+      - name: 4. Publish test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+
+      - name: 5. Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: target/app.jar
+
+  docker-and-deploy:
+    name: Docker Build, Push and Deploy
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and tag Docker image
+        run: |
+          IMAGE=${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}
+          docker build --build-arg GIT_SHA=${GITHUB_SHA::7} \
+            -t $IMAGE:${GITHUB_SHA::7} -t $IMAGE:latest .
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Push image to Amazon ECR
+        run: |
+          docker push $IMAGE:${GITHUB_SHA::7}
+          docker push $IMAGE:latest
+
+      - name: Configure kubectl for EKS
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+
+      - name: Install Ansible and Kubernetes collection
+        run: |
+          pip install ansible kubernetes
+          ansible-galaxy collection install kubernetes.core
+
+      - name: Deploy to Kubernetes with Ansible
+        run: |
+          ansible-playbook -i ansible/inventory.ini ansible/deploy.yml \
+            -e image=$IMAGE:${GITHUB_SHA::7}
+
+      - name: Verify deployment status
+        run: |
+          kubectl rollout status deployment/cicd-java-app -n cicd-demo --timeout=180s
+          kubectl get pods,svc -n cicd-demo
+
+      - name: Verify application availability
+        run: |
+          HOST=""
+          for i in $(seq 1 30); do
+            HOST=$(kubectl get svc cicd-java-app -n cicd-demo \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            [ -n "$HOST" ] && break
+            sleep 10
+          done
+          echo "Application URL: http://$HOST"
+          for i in $(seq 1 30); do
+            if curl -fsS "http://$HOST/api/info"; then echo; exit 0; fi
+            sleep 10
+          done
+          echo "Application did not become available" && exit 1
