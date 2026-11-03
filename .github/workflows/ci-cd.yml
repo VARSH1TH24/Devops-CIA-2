@@ -27,15 +27,28 @@ jobs:
 
       - name: 3. Compile, run unit tests and package
         run: mvn -B clean verify
+      - name: 4. SonarCloud Analysis
+        uses: SonarSource/sonarqube-scan-action@v5.0.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.organization=varsh1th24w
+            -Dsonar.projectKey=VARSH1TH24_Devops-CIA-2
+            -Dsonar.sources=src/main/java
+            -Dsonar.tests=src/test/java
+            -Dsonar.java.binaries=target/classes
+            -Dsonar.junit.reportPaths=target/surefire-reports
 
-      - name: 4. Publish test report
+      - name: 5. Publish test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: surefire-reports
           path: target/surefire-reports/
 
-      - name: 5. Upload JAR artifact
+      - name: 6. Upload JAR artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-jar
