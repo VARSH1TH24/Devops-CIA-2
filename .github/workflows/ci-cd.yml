@@ -40,7 +40,7 @@ jobs:
           SONAR_HOST_URL: https://sonarcloud.io
         with:
           args: >
-            -Dsonar.organization=varsh1th24w
+            -Dsonar.organization=varsh1th24
             -Dsonar.projectKey=VARSH1TH24_Devops-CIA-2
             -Dsonar.sources=src/main/java
             -Dsonar.tests=src/test/java
