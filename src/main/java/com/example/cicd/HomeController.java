@@ -11,7 +11,7 @@ import java.util.Map;
 public class HomeController {
 
     /** Message shown on the home page. Edit this to demonstrate a redeployment. */
-    public static final String MESSAGE = "Hello from the CI/CD pipeline - version 1";
+    public static final String MESSAGE = "Hello from the CI/CD pipeline - version 2! Automatic deployment successful!";
 
     @Value("${app.git-sha:local}")
     private String gitSha;
