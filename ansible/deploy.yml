@@ -12,11 +12,7 @@
         that: image is defined
         fail_msg: "Pass the image with -e image=<registry>/<repo>:<tag>"
 
-    - name: Create namespace
-      kubernetes.core.k8s:
-        state: present
-        src: "{{ playbook_dir }}/../k8s/namespace.yaml"
-
+   
     - name: Apply Deployment (rendered with the new image tag)
       kubernetes.core.k8s:
         state: present

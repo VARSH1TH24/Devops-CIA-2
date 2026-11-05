@@ -1,3 +1,4 @@
+
 name: CI/CD - Build, Test, Dockerize, Deploy to EKS
 
 on:
@@ -5,15 +6,19 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_REGION: ap-south-1
   ECR_REPOSITORY: cicd-java-app
-  EKS_CLUSTER: ${{ secrets.EKS_CLUSTER_NAME }}
+  EKS_CLUSTER: cicd-demo-cluster
 
 jobs:
   build-and-test:
     name: Build and Test (Maven)
     runs-on: ubuntu-latest
+
     steps:
       - name: 1. Checkout source code
         uses: actions/checkout@v4
@@ -27,6 +32,7 @@ jobs:
 
       - name: 3. Compile, run unit tests and package
         run: mvn -B clean verify
+
       - name: 4. SonarCloud Analysis
         uses: SonarSource/sonarqube-scan-action@v5.0.0
         env:
@@ -58,16 +64,20 @@ jobs:
     name: Docker Build, Push and Deploy
     needs: build-and-test
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: arn:aws:iam::145128758235:role/GitHubActionsEKSDeployRole
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: ecr
@@ -112,9 +122,21 @@ jobs:
             [ -n "$HOST" ] && break
             sleep 10
           done
+
+          if [ -z "$HOST" ]; then
+            echo "LoadBalancer hostname was not assigned"
+            exit 1
+          fi
+
           echo "Application URL: http://$HOST"
+
           for i in $(seq 1 30); do
-            if curl -fsS "http://$HOST/api/info"; then echo; exit 0; fi
+            if curl -fsS "http://$HOST/api/info"; then
+              echo
+              exit 0
+            fi
             sleep 10
           done
-          echo "Application did not become available" && exit 1
+
+          echo "Application did not become available"
+          exit 1
